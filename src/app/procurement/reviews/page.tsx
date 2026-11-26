@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageTitle, PageCard } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -9,10 +9,10 @@ import { contractorsApi } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/useApi";
 import { formatDate } from "@/lib/utils";
-import type { Contractor } from "@/lib/types";
+import type { Contractor, ContractorDocumentField } from "@/lib/types";
 
-/** Every contractor document field, in submission order — see §4.4. */
-const DOCUMENT_FIELDS: Array<[keyof Contractor, string]> = [
+/** Every contractor document field, in submission order — see §4.4 Step 2/3. */
+const DOCUMENT_FIELDS: Array<[ContractorDocumentField, string]> = [
   ["companyProfileDoc", "Company profile"],
   ["cacCertificate", "CAC certificate"],
   ["taxClearanceCertificate", "Tax clearance certificate"],
@@ -22,6 +22,7 @@ const DOCUMENT_FIELDS: Array<[keyof Contractor, string]> = [
   ["nsitfCertificate", "NSITF certificate"],
   ["bppRegistrationCertificate", "BPP registration certificate"],
   ["efccScumlCertificate", "EFCC/SCUML certificate"],
+  ["passportPhotos", "Passport photos"],
   ["ninDocument", "NIN document"],
   ["letterOfIntroduction", "Letter of introduction"],
 ];
@@ -36,40 +37,66 @@ function Row({ label, value }: { label: string; value?: string }) {
   );
 }
 
+function documentLinks(contractor: Contractor, field: ContractorDocumentField) {
+  if (field === "passportPhotos") {
+    return (contractor.passportPhotos ?? []).map((url, i) => ({ url, label: `Photo ${i + 1}` }));
+  }
+  const url = contractor[field];
+  return typeof url === "string" && url ? [{ url, label: "View" }] : [];
+}
+
 export default function ProcurementReviewsPage() {
   const { data, loading, error, setData } = useApi<Contractor[]>(() => contractorsApi.pendingReview(), []);
   const rows = data ?? [];
-  const [viewing, setViewing] = useState<Contractor | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<Contractor | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [busyField, setBusyField] = useState<ContractorDocumentField | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  async function approve(contractor: Contractor) {
-    setBusy(true);
-    setActionError(null);
-    try {
-      await contractorsApi.approve(contractor._id);
-      setData((prev) => (prev ?? []).filter((c) => c._id !== contractor._id));
-      setViewing(null);
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.messages.join(" ") : "Could not approve this contractor.");
-    } finally {
-      setBusy(false);
-    }
-  }
+  useEffect(() => {
+    if (!reviewingId) return;
+    let cancelled = false;
+    contractorsApi
+      .get(reviewingId)
+      .then((c) => {
+        if (!cancelled) setDetail(c);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setDetailError(err instanceof ApiError ? err.messages.join(" ") : "Could not load this submission.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewingId]);
 
-  async function reject(contractor: Contractor) {
-    const reason = window.prompt(`Why is ${contractor.name ?? contractor.email}'s submission being rejected?`);
-    if (!reason) return;
-    setBusy(true);
+  async function reviewDocument(field: ContractorDocumentField, approved: boolean) {
+    if (!detail) return;
+    let reason: string | undefined;
+    if (!approved) {
+      const entered = window.prompt(`Why is this document being rejected? This rejects the whole submission.`);
+      if (!entered) return;
+      reason = entered;
+    }
+    setBusyField(field);
     setActionError(null);
     try {
-      await contractorsApi.reject(contractor._id, reason);
-      setData((prev) => (prev ?? []).filter((c) => c._id !== contractor._id));
-      setViewing(null);
+      const updated = await contractorsApi.reviewDocument(detail._id, field, { approved, reason });
+      setDetail(updated);
+      if (updated.status !== "pending_review") {
+        // Rejected (whole submission) or every document just got approved
+        // (auto-moved to awaiting_id_pickup) — either way it drops off this list.
+        setData((prev) => (prev ?? []).filter((c) => c._id !== updated._id));
+        setReviewingId(null);
+      } else {
+        setData((prev) => (prev ?? []).map((c) => (c._id === updated._id ? updated : c)));
+      }
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.messages.join(" ") : "Could not reject this contractor.");
+      setActionError(err instanceof ApiError ? err.messages.join(" ") : "Could not record that review.");
     } finally {
-      setBusy(false);
+      setBusyField(null);
     }
   }
 
@@ -84,7 +111,14 @@ export default function ProcurementReviewsPage() {
       header: "",
       width: "120px",
       render: (c) => (
-        <button onClick={() => setViewing(c)} className="text-sm font-semibold text-primary hover:underline">
+        <button
+          onClick={() => {
+            setDetail(null);
+            setDetailError(null);
+            setReviewingId(c._id);
+          }}
+          className="text-sm font-semibold text-primary hover:underline"
+        >
           Review
         </button>
       ),
@@ -96,7 +130,7 @@ export default function ProcurementReviewsPage() {
       <PageTitle>Pending Reviews</PageTitle>
 
       <PageCard className="px-7 py-7">
-        <h2 className="mb-6 text-2xl font-bold text-ink">Contractor registrations awaiting review</h2>
+        <h2 className="mb-6 text-2xl font-bold text-ink">Contractor submissions awaiting review</h2>
         {loading ? (
           <p className="py-16 text-center text-sm text-muted">Loading submissions&hellip;</p>
         ) : error ? (
@@ -106,41 +140,102 @@ export default function ProcurementReviewsPage() {
         )}
       </PageCard>
 
-      <Modal open={!!viewing} onClose={() => setViewing(null)} title="Contractor submission" className="w-[640px]">
-        {viewing && (
+      <Modal
+        open={!!reviewingId}
+        onClose={() => {
+          setReviewingId(null);
+          setDetail(null);
+        }}
+        title="Contractor submission"
+        className="w-[680px]"
+      >
+        {detailError ? (
+          <p role="alert" className="m-7 rounded-[4px] bg-red-light px-4 py-3 text-sm text-red">
+            {detailError}
+          </p>
+        ) : !detail ? (
+          <p className="py-16 text-center text-sm text-muted">Loading&hellip;</p>
+        ) : (
           <div className="px-7 py-6">
-            <Row label="Name" value={viewing.name} />
-            <Row label="Company name" value={viewing.companyName} />
-            <Row label="Email" value={viewing.email} />
-            <Row label="Phone" value={viewing.phone} />
-            <Row label="Nationality" value={viewing.nationality} />
-            <Row label="Address" value={viewing.addressOfContractor} />
-            <Row label="Permanent address" value={viewing.permanentAddress} />
-            <Row label="Office address" value={viewing.officeAddress} />
-            <Row label="RC number" value={viewing.rcNumber} />
-            <Row label="TIN" value={viewing.tin} />
-            <Row label="BPP registration date" value={viewing.bppRegistrationDate ? formatDate(viewing.bppRegistrationDate) : undefined} />
+            <Row label="Name" value={detail.name} />
+            <Row label="Company name" value={detail.companyName} />
+            <Row label="Email" value={detail.email} />
+            <Row label="Phone" value={detail.phone} />
+            <Row label="Nationality" value={detail.nationality} />
+            <Row label="Address" value={detail.addressOfContractor} />
+            <Row label="Permanent address" value={detail.permanentAddress} />
+            <Row label="Office address" value={detail.officeAddress} />
+            <Row label="RC number" value={detail.rcNumber} />
+            <Row label="TIN" value={detail.tin} />
+            <Row
+              label="BPP registration date"
+              value={detail.bppRegistrationDate ? formatDate(detail.bppRegistrationDate) : undefined}
+            />
             <Row
               label="Validity period"
-              value={`${formatDate(viewing.validityFrom)} – ${formatDate(viewing.validityTo)}`}
+              value={`${formatDate(detail.validityFrom)} – ${formatDate(detail.validityTo)}`}
             />
 
-            <p className="mb-2 mt-5 text-sm font-semibold text-ink">Documents</p>
-            <div className="flex flex-col gap-1.5">
-              {DOCUMENT_FIELDS.map(([key, label]) => {
-                const url = viewing[key];
-                if (!url || typeof url !== "string") return null;
+            <p className="mb-2 mt-5 text-sm font-semibold text-ink">
+              Documents — approve or reject each one individually. Rejecting any single document rejects the whole
+              submission.
+            </p>
+            <div className="flex flex-col gap-2">
+              {DOCUMENT_FIELDS.map(([field, label]) => {
+                const links = documentLinks(detail, field);
+                const review = detail.documentReviews?.[field];
+                const approved = review?.status === "approved";
                 return (
-                  <a key={key} href={url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">
-                    {label}
-                  </a>
+                  <div
+                    key={field}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-[4px] border border-border px-3 py-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-ink">{label}</p>
+                      <div className="flex flex-wrap gap-3">
+                        {links.length === 0 ? (
+                          <span className="text-xs text-muted">Not provided</span>
+                        ) : (
+                          links.map((l) => (
+                            <a
+                              key={l.url}
+                              href={l.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline"
+                            >
+                              {l.label}
+                            </a>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                    {approved ? (
+                      <span className="shrink-0 rounded-[4px] bg-primary-light px-2.5 py-1 text-xs font-semibold text-primary">
+                        Approved
+                      </span>
+                    ) : (
+                      <div className="flex shrink-0 gap-2">
+                        <Button
+                          size="sm"
+                          disabled={busyField !== null}
+                          onClick={() => reviewDocument(field, true)}
+                        >
+                          {busyField === field ? "…" : "Approve"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={busyField !== null}
+                          onClick={() => reviewDocument(field, false)}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
-              {viewing.passportPhotos?.map((url, i) => (
-                <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">
-                  Passport photo {i + 1}
-                </a>
-              ))}
             </div>
 
             {actionError && (
@@ -148,15 +243,6 @@ export default function ProcurementReviewsPage() {
                 {actionError}
               </p>
             )}
-
-            <div className="mt-6 flex gap-3">
-              <Button fullWidth disabled={busy} onClick={() => approve(viewing)}>
-                Approve
-              </Button>
-              <Button fullWidth variant="destructive" disabled={busy} onClick={() => reject(viewing)}>
-                Reject
-              </Button>
-            </div>
           </div>
         )}
       </Modal>

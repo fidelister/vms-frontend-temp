@@ -9,6 +9,9 @@ import {
   UserFullViewIcon,
   Building06Icon,
   DashboardSquare01Icon,
+  AddInvoiceIcon,
+  CheckmarkCircle02Icon,
+  IdCardIcon,
 } from "@hugeicons/core-free-icons";
 import type { Role } from "@/lib/types";
 
@@ -44,7 +47,10 @@ export const NAV_ITEMS: Record<Role, NavItem[]> = {
     { label: "Admin", href: "/super-admin/admins", icon: UserFullViewIcon },
   ],
   procurement_admin: [
-    { label: "Pending Reviews", href: "/procurement/reviews", icon: Briefcase01Icon },
+    { label: "Invite Contractor", href: "/procurement/invite", icon: AddInvoiceIcon },
+    { label: "Pending Reviews", href: "/procurement/reviews", icon: CheckmarkCircle02Icon },
+    { label: "Awaiting ID Pickup", href: "/procurement/pickups", icon: IdCardIcon },
+    { label: "Contractors", href: "/procurement/contractors", icon: Briefcase01Icon },
   ],
 };
 

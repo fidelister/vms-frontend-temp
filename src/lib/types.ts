@@ -49,6 +49,7 @@ export type NotificationType =
   | "contractor_submitted"
   | "contractor_approved"
   | "contractor_rejected"
+  | "contractor_activated"
   | "dispatch_received";
 
 export interface Institution {
@@ -165,13 +166,50 @@ export interface Visitor {
 
 /**
  * The old single-step "Add contractor" flow is gone — a contractor now goes
- * through invited -> pending_review -> active (or rejected, which loops back
- * to a re-editable pending_review attempt on the same link) -> inactive
- * (revoked). See FRONTEND_INTEGRATION_GUIDE.md §4.4.
+ * through a real-world lifecycle:
+ *
+ *   invited -> pending_review -> awaiting_id_pickup -> active -> inactive (revoked/suspended)
+ *                  ^________________rejected_________________v (resubmit on the same link)
+ *
+ * `rejected` happens the moment any single document is rejected (see
+ * DocumentReview below) — there's no longer a single "approve/reject the
+ * whole application" action. `awaiting_id_pickup` means every document is
+ * approved but the contractor hasn't yet physically collected their printed
+ * ID card — only `confirm-pickup` flips them to `active`. See
+ * FRONTEND_INTEGRATION_GUIDE.md §4.4.
  */
-export type ContractorStatus = "invited" | "pending_review" | "rejected" | "active" | "inactive";
+export type ContractorStatus =
+  | "invited"
+  | "pending_review"
+  | "rejected"
+  | "awaiting_id_pickup"
+  | "active"
+  | "inactive";
 
 export type PaymentStatus = "not_started" | "pending" | "paid";
+
+export type DocumentReviewStatus = "pending" | "approved" | "rejected";
+
+/** The 12 document fields a contractor submission carries — see §4.4 Step 2/3. */
+export type ContractorDocumentField =
+  | "companyProfileDoc"
+  | "cacCertificate"
+  | "taxClearanceCertificate"
+  | "vatCertificate"
+  | "pencomCertificate"
+  | "itfCertificate"
+  | "nsitfCertificate"
+  | "bppRegistrationCertificate"
+  | "efccScumlCertificate"
+  | "passportPhotos"
+  | "ninDocument"
+  | "letterOfIntroduction";
+
+export interface DocumentReview {
+  status: DocumentReviewStatus;
+  reason: string | null;
+  reviewedAt: string | null;
+}
 
 /**
  * Only `email`/`validityFrom`/`validityTo` exist right after an invite — every
@@ -214,6 +252,8 @@ export interface Contractor {
   passportPhotos?: string[];
   ninDocument?: string;
   letterOfIntroduction?: string;
+  /** Only present on `GET /contractors/:id` — per-document approve/reject state. See §4.4 Step 3. */
+  documentReviews?: Record<ContractorDocumentField, DocumentReview>;
   createdAt: string;
 }
 
@@ -227,6 +267,8 @@ export interface ContractorRegistrationView {
   paymentStatus: PaymentStatus;
   /** Only present when `status` is "rejected" — what to fix before resubmitting. */
   rejectReason?: string;
+  /** On a resubmission, shows exactly which document(s) got flagged last time. */
+  documentReviews?: Record<ContractorDocumentField, DocumentReview>;
   institution: { name: string; logoUrl?: string };
   /** Previously-entered fields, for resuming or resubmitting after rejection. */
   existing?: Partial<Contractor>;

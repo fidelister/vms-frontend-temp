@@ -2,6 +2,7 @@ import { api } from "@/lib/api/client";
 import type {
   AppNotification,
   Contractor,
+  ContractorDocumentField,
   ContractorPaymentInitResponse,
   ContractorRegistrationView,
   ContractorVisit,
@@ -275,10 +276,13 @@ export const visitorsApi = {
 /* ----------------------------------------------------------- contractors */
 
 /**
- * Replaces the old single-step "Add contractor" form. An Institution Admin
- * now only provides this much — everything else (name, company, documents)
- * is filled in later by the contractor themselves via the emailed
- * registration link. See FRONTEND_INTEGRATION_GUIDE.md §4.4.
+ * Replaces the old single-step "Add contractor" form. Sent by the
+ * Procurement Admin now, not the Institution Admin — in the real process the
+ * CDS approves the contractor's letter offline, and the Procurement Admin
+ * acts once that's happened. Only email + validity period are provided here
+ * — everything else (name, company, documents) is filled in later by the
+ * contractor themselves via the emailed registration link. See
+ * FRONTEND_INTEGRATION_GUIDE.md §4.4.
  */
 export interface InviteContractorPayload {
   email: string;
@@ -287,20 +291,33 @@ export interface InviteContractorPayload {
 }
 
 export const contractorsApi = {
+  /** Procurement Admin only. */
   invite: (payload: InviteContractorPayload) => api.post<Contractor>("/contractors/invite", payload),
   list: (params?: { q?: string; status?: string }) => api.get<Contractor[]>("/contractors", { query: params }),
+  /** Only this single-record view includes `documentReviews`. */
   get: (id: string) => api.get<Contractor>(`/contractors/${id}`),
   visits: (id: string) => api.get<ContractorVisit[]>(`/contractors/${id}/visits`),
   update: (id: string, payload: Partial<Pick<Contractor, "phone">>) =>
     api.patch<Contractor>(`/contractors/${id}`, payload),
+  /** Institution Admin or Procurement Admin; only works on an active contractor. */
   revoke: (id: string, reason: string) => api.patch<Contractor>(`/contractors/${id}/revoke`, { reason }),
   /** Both return the ContractorVisit record they created/closed, not the contractor itself. */
   checkIn: (id: string) => api.patch<ContractorVisit>(`/contractors/${id}/check-in`),
   checkOut: (id: string) => api.patch<ContractorVisit>(`/contractors/${id}/check-out`),
-  /** Procurement Admin only — their entire dashboard is these three calls. */
+  /** Procurement Admin only — submissions with at least one document still undecided. */
   pendingReview: () => api.get<Contractor[]>("/contractors/pending-review"),
-  approve: (id: string) => api.patch<Contractor>(`/contractors/${id}/approve`),
-  reject: (id: string, reason: string) => api.patch<Contractor>(`/contractors/${id}/reject`, { reason }),
+  /**
+   * Procurement Admin only — approve/reject one of the 12 documents at a time.
+   * Rejecting any single document immediately rejects the whole submission;
+   * approving the last pending one auto-activates the pickup step — there's
+   * no separate "finalize" call. See §4.4 Step 3.
+   */
+  reviewDocument: (id: string, field: ContractorDocumentField, body: { approved: boolean; reason?: string }) =>
+    api.patch<Contractor>(`/contractors/${id}/documents/${field}/review`, body),
+  /** Procurement Admin only — all documents approved, ID card not yet collected. */
+  awaitingPickup: () => api.get<Contractor[]>("/contractors/awaiting-pickup"),
+  /** Procurement Admin only — the one call that actually activates the permit. */
+  confirmPickup: (id: string) => api.patch<Contractor>(`/contractors/${id}/confirm-pickup`),
 };
 
 /**

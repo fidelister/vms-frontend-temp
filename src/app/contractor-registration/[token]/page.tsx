@@ -27,6 +27,11 @@ const DOCUMENT_FIELDS: Array<[string, string]> = [
   ["letterOfIntroduction", "Letter of introduction"],
 ];
 
+const DOCUMENT_FIELD_LABEL: Record<string, string> = Object.fromEntries([
+  ...DOCUMENT_FIELDS,
+  ["passportPhotos", "Passport photos"],
+]);
+
 export default function ContractorRegistrationPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const [view, setView] = useState<ContractorRegistrationView | null>(null);
@@ -203,12 +208,27 @@ function RegistrationForm({
     }
   }
 
+  const flaggedDocs = Object.entries(view.documentReviews ?? {}).filter(
+    ([, review]) => review.status === "rejected",
+  );
+
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      {view.status === "rejected" && view.rejectReason && (
-        <p className="rounded-[4px] bg-red-light px-4 py-3 text-sm text-red">
-          Your previous submission was rejected: {view.rejectReason}. Please correct it below and resubmit.
-        </p>
+      {view.status === "rejected" && (
+        <div className="rounded-[4px] bg-red-light px-4 py-3 text-sm text-red">
+          {view.rejectReason && <p>Your previous submission was rejected: {view.rejectReason}.</p>}
+          {flaggedDocs.length > 0 && (
+            <ul className="mt-1 list-disc pl-5">
+              {flaggedDocs.map(([field, review]) => (
+                <li key={field}>
+                  {DOCUMENT_FIELD_LABEL[field] ?? field}
+                  {review.reason ? `: ${review.reason}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-1">Please correct it below and resubmit — all fields and documents again, even ones that were fine.</p>
+        </div>
       )}
 
       <h2 className="text-lg font-bold text-ink">Your details</h2>
