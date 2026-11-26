@@ -87,7 +87,11 @@ export default function ContractorRegistrationPage({ params }: { params: Promise
             body="Your documents are with the institution's procurement team for review. You'll be notified by email once a decision is made."
           />
         ) : view.paymentStatus !== "paid" ? (
-          <PaymentPanel token={token} fee={view.fee} onPaid={() => setView({ ...view, paymentStatus: "paid" })} />
+          <PaymentPanel
+            token={token}
+            fee={view.registrationFee}
+            onPaid={() => setView({ ...view, paymentStatus: "paid" })}
+          />
         ) : (
           <RegistrationForm token={token} view={view} onSubmitted={() => setSubmitted(true)} />
         )}

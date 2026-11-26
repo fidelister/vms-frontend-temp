@@ -263,7 +263,7 @@ export interface ContractorRegistrationView {
   email: string;
   validityFrom: string;
   validityTo: string;
-  fee: number;
+  registrationFee: number;
   paymentStatus: PaymentStatus;
   /** Only present when `status` is "rejected" — what to fix before resubmitting. */
   rejectReason?: string;
