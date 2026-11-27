@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -55,6 +56,10 @@ export default function LoginPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+
+        <Link href="/forgot-password" className="-mt-2 self-end text-sm text-primary hover:underline">
+          Forgot password?
+        </Link>
 
         {error && (
           <p role="alert" className="rounded-[4px] bg-red-light px-4 py-3 text-sm text-red">
