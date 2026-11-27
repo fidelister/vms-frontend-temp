@@ -337,6 +337,17 @@ export const contractorRegistrationApi = {
     }),
   submit: (token: string, formData: FormData) =>
     api.upload<Contractor>(`/contractor-registration/${token}/submit`, formData, { anonymous: true }),
+  /**
+   * Replaces one currently-rejected document, field name "file" (2 files for
+   * passportPhotos) — only works while that field's documentReviews entry is
+   * "rejected". The rest of the submission stays locked. Re-fetch `view()`
+   * afterwards to pick up the field's reset-to-pending state.
+   */
+  resubmitDocument: (token: string, field: ContractorDocumentField, files: File[]) => {
+    const fd = new FormData();
+    files.forEach((file) => fd.append("file", file));
+    return api.upload<void>(`/contractor-registration/${token}/documents/${field}`, fd, { anonymous: true });
+  },
 };
 
 /* -------------------------------------------------------------- dispatch */

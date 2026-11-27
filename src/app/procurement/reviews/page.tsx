@@ -37,6 +37,11 @@ function Row({ label, value }: { label: string; value?: string }) {
   );
 }
 
+const REVIEW_STAGE_LABEL: Record<string, string> = {
+  awaiting_review: "Awaiting review",
+  awaiting_resubmission: "Awaiting resubmission",
+};
+
 function documentLinks(contractor: Contractor, field: ContractorDocumentField) {
   if (field === "passportPhotos") {
     return (contractor.passportPhotos ?? []).map((url, i) => ({ url, label: `Photo ${i + 1}` }));
@@ -76,7 +81,9 @@ export default function ProcurementReviewsPage() {
     if (!detail) return;
     let reason: string | undefined;
     if (!approved) {
-      const entered = window.prompt(`Why is this document being rejected? This rejects the whole submission.`);
+      const entered = window.prompt(
+        "Why is this document being rejected? Only this document is affected — the contractor keeps everything else and just replaces this one file.",
+      );
       if (!entered) return;
       reason = entered;
     }
@@ -86,8 +93,10 @@ export default function ProcurementReviewsPage() {
       const updated = await contractorsApi.reviewDocument(detail._id, field, { approved, reason });
       setDetail(updated);
       if (updated.status !== "pending_review") {
-        // Rejected (whole submission) or every document just got approved
-        // (auto-moved to awaiting_id_pickup) — either way it drops off this list.
+        // Every document just got approved — auto-moved to awaiting_id_pickup,
+        // so it drops off this list. A single rejected document no longer
+        // does this; the contractor stays pending_review and the row just
+        // gets patched below instead.
         setData((prev) => (prev ?? []).filter((c) => c._id !== updated._id));
         setReviewingId(null);
       } else {
@@ -106,6 +115,21 @@ export default function ProcurementReviewsPage() {
     { key: "email", header: "Email address", width: "1.3fr", render: (c) => c.email },
     { key: "rcNumber", header: "RC number", render: (c) => c.rcNumber ?? "—" },
     { key: "validityTo", header: "Expiring date", render: (c) => formatDate(c.validityTo) },
+    {
+      key: "reviewStage",
+      header: "Status",
+      render: (c) => (
+        <span
+          className={
+            c.reviewStage === "awaiting_resubmission"
+              ? "rounded-[4px] bg-red-light px-2 py-1 text-xs font-semibold text-red"
+              : "rounded-[4px] bg-primary-light px-2 py-1 text-xs font-semibold text-primary"
+          }
+        >
+          {(c.reviewStage && REVIEW_STAGE_LABEL[c.reviewStage]) ?? "Awaiting review"}
+        </span>
+      ),
+    },
     {
       key: "action",
       header: "",
@@ -177,14 +201,15 @@ export default function ProcurementReviewsPage() {
             />
 
             <p className="mb-2 mt-5 text-sm font-semibold text-ink">
-              Documents — approve or reject each one individually. Rejecting any single document rejects the whole
-              submission.
+              Documents — approve or reject each one individually. Rejecting one only flags that document; the
+              contractor replaces just that file on the same link and everything else stays locked in.
             </p>
             <div className="flex flex-col gap-2">
               {DOCUMENT_FIELDS.map(([field, label]) => {
                 const links = documentLinks(detail, field);
                 const review = detail.documentReviews?.[field];
                 const approved = review?.status === "approved";
+                const rejected = review?.status === "rejected";
                 return (
                   <div
                     key={field}
@@ -209,6 +234,9 @@ export default function ProcurementReviewsPage() {
                           ))
                         )}
                       </div>
+                      {rejected && review?.reason && (
+                        <p className="mt-1 text-xs text-red">Rejected: {review.reason} — awaiting replacement.</p>
+                      )}
                     </div>
                     {approved ? (
                       <span className="shrink-0 rounded-[4px] bg-primary-light px-2.5 py-1 text-xs font-semibold text-primary">

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { contractorRegistrationApi } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
-import type { ContractorRegistrationView } from "@/lib/types";
+import type { ContractorDocumentField, ContractorRegistrationView } from "@/lib/types";
 
 const inputClass =
   "h-11 w-full rounded-[4px] border border-border bg-white px-3.5 text-sm text-ink outline-none transition-colors placeholder:text-border focus:border-primary";
@@ -81,10 +81,16 @@ export default function ContractorRegistrationPage({ params }: { params: Promise
           <SubmittedPanel />
         ) : view.status === "active" ? (
           <StatusPanel heading="Already approved" body="Your contractor registration has already been approved. No further action is needed." />
-        ) : view.status === "pending_review" ? (
+        ) : view.status === "awaiting_id_pickup" ? (
           <StatusPanel
-            heading="Submission received"
-            body="Your documents are with the institution's procurement team for review. You'll be notified by email once a decision is made."
+            heading="Approved — come collect your ID card"
+            body="All your documents have been approved. Please visit the institution to collect your printed ID card."
+          />
+        ) : view.status === "pending_review" ? (
+          <RejectedDocumentsPanel
+            token={token}
+            view={view}
+            onReplaced={(next) => setView(next)}
           />
         ) : view.paymentStatus !== "paid" ? (
           <PaymentPanel
@@ -115,6 +121,118 @@ function SubmittedPanel() {
       heading="Registration submitted"
       body="Thanks — your details and documents have been sent for review. You'll hear back by email once a decision is made."
     />
+  );
+}
+
+/**
+ * `pending_review` no longer has a whole-application "rejected" state —
+ * rejection is scoped to individual documents. If any of the 12 are
+ * currently flagged, show just a replace-this-one-file control for each of
+ * them; everything else the contractor submitted stays locked and untouched.
+ */
+function RejectedDocumentsPanel({
+  token,
+  view,
+  onReplaced,
+}: {
+  token: string;
+  view: ContractorRegistrationView;
+  onReplaced: (next: ContractorRegistrationView) => void;
+}) {
+  const flaggedDocs = Object.entries(view.documentReviews ?? {}).filter(
+    ([, review]) => review.status === "rejected",
+  );
+
+  if (flaggedDocs.length === 0) {
+    return (
+      <StatusPanel
+        heading="Submission received"
+        body="Your documents are with the institution's procurement team for review. You'll be notified by email once a decision is made."
+      />
+    );
+  }
+
+  function refresh() {
+    contractorRegistrationApi
+      .view(token)
+      .then(onReplaced)
+      .catch(() => {
+        /* the just-replaced document still uploaded fine — a refresh hiccup isn't fatal here */
+      });
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="rounded-[4px] bg-red-light px-4 py-3 text-sm text-red">
+        <p className="font-semibold">One or more documents need to be replaced:</p>
+        <ul className="mt-1 list-disc pl-5">
+          {flaggedDocs.map(([field, review]) => (
+            <li key={field}>
+              {DOCUMENT_FIELD_LABEL[field] ?? field}
+              {review.reason ? `: ${review.reason}` : ""}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-1">Everything else you already submitted stays as-is.</p>
+      </div>
+      {flaggedDocs.map(([field]) => (
+        <DocumentResubmitForm
+          key={field}
+          token={token}
+          field={field as ContractorDocumentField}
+          onReplaced={refresh}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DocumentResubmitForm({
+  token,
+  field,
+  onReplaced,
+}: {
+  token: string;
+  field: ContractorDocumentField;
+  onReplaced: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const needsTwo = field === "passportPhotos";
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const files = (new FormData(e.currentTarget).getAll("file") as File[]).filter((f) => f.size > 0);
+    if (files.length === 0 || (needsTwo && files.length < 2)) {
+      setError(needsTwo ? "Please choose both photos." : "Please choose a file.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await contractorRegistrationApi.resubmitDocument(token, field, files);
+      onReplaced();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.messages.join(" ") : "Could not upload the replacement.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-2 rounded-[4px] border border-border px-4 py-3">
+      <label className="text-sm font-semibold text-ink">{DOCUMENT_FIELD_LABEL[field] ?? field}</label>
+      <input name="file" type="file" accept={needsTwo ? "image/*" : "image/*,.pdf"} className={inputClass} required />
+      {needsTwo && <input name="file" type="file" accept="image/*" className={inputClass} required />}
+      {error && (
+        <p role="alert" className="text-xs text-red">
+          {error}
+        </p>
+      )}
+      <Button type="submit" size="sm" disabled={busy} className="self-start">
+        {busy ? "Uploading…" : "Replace document"}
+      </Button>
+    </form>
   );
 }
 
@@ -212,29 +330,8 @@ function RegistrationForm({
     }
   }
 
-  const flaggedDocs = Object.entries(view.documentReviews ?? {}).filter(
-    ([, review]) => review.status === "rejected",
-  );
-
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      {view.status === "rejected" && (
-        <div className="rounded-[4px] bg-red-light px-4 py-3 text-sm text-red">
-          {view.rejectReason && <p>Your previous submission was rejected: {view.rejectReason}.</p>}
-          {flaggedDocs.length > 0 && (
-            <ul className="mt-1 list-disc pl-5">
-              {flaggedDocs.map(([field, review]) => (
-                <li key={field}>
-                  {DOCUMENT_FIELD_LABEL[field] ?? field}
-                  {review.reason ? `: ${review.reason}` : ""}
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="mt-1">Please correct it below and resubmit — all fields and documents again, even ones that were fine.</p>
-        </div>
-      )}
-
       <h2 className="text-lg font-bold text-ink">Your details</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input name="name" label="Name" placeholder="Full name" defaultValue={existing?.name} required />

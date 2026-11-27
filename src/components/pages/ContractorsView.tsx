@@ -19,7 +19,6 @@ import type { Contractor, ContractorStatus, ContractorVisit } from "@/lib/types"
 export const CONTRACTOR_STATUS_LABEL: Record<ContractorStatus, string> = {
   invited: "Invited",
   pending_review: "Pending review",
-  rejected: "Rejected",
   awaiting_id_pickup: "Awaiting ID pickup",
   active: "Active",
   inactive: "Revoked",

@@ -169,19 +169,21 @@ export interface Visitor {
  * through a real-world lifecycle:
  *
  *   invited -> pending_review -> awaiting_id_pickup -> active -> inactive (revoked/suspended)
- *                  ^________________rejected_________________v (resubmit on the same link)
  *
- * `rejected` happens the moment any single document is rejected (see
- * DocumentReview below) — there's no longer a single "approve/reject the
- * whole application" action. `awaiting_id_pickup` means every document is
- * approved but the contractor hasn't yet physically collected their printed
- * ID card — only `confirm-pickup` flips them to `active`. See
- * FRONTEND_INTEGRATION_GUIDE.md §4.4.
+ * There is no `rejected` contractor status. Rejecting a document only flips
+ * that one field's entry in `documentReviews` to `"rejected"` (see
+ * DocumentReview below) — the contractor stays `pending_review` throughout,
+ * and only the flagged document needs replacing (see `reviewStage` below and
+ * the public resubmit-one-document endpoint). There's no single
+ * "approve/reject the whole application" action either way.
+ * `awaiting_id_pickup` means every document is approved but the contractor
+ * hasn't yet physically collected their printed ID card — only
+ * `confirm-pickup` flips them to `active`. See FRONTEND_INTEGRATION_GUIDE.md
+ * §4.4.
  */
 export type ContractorStatus =
   | "invited"
   | "pending_review"
-  | "rejected"
   | "awaiting_id_pickup"
   | "active"
   | "inactive";
@@ -189,6 +191,14 @@ export type ContractorStatus =
 export type PaymentStatus = "not_started" | "pending" | "paid";
 
 export type DocumentReviewStatus = "pending" | "approved" | "rejected";
+
+/**
+ * Only present on `GET /contractors/pending-review` list items — a
+ * precomputed Status column value so the frontend doesn't have to derive it
+ * from `documentReviews` itself. `"awaiting_resubmission"` means at least one
+ * document is currently rejected and the contractor hasn't replaced it yet.
+ */
+export type ContractorReviewStage = "awaiting_review" | "awaiting_resubmission";
 
 /** The 12 document fields a contractor submission carries — see §4.4 Step 2/3. */
 export type ContractorDocumentField =
@@ -230,7 +240,8 @@ export interface Contractor {
   status: ContractorStatus;
   registrationToken?: string;
   registrationTokenExpiresAt?: string;
-  rejectReason?: string;
+  /** Only present on `GET /contractors/pending-review` list items. */
+  reviewStage?: ContractorReviewStage;
   revokeReason?: string;
   checkedIn?: boolean;
   nationality?: string;
@@ -265,12 +276,10 @@ export interface ContractorRegistrationView {
   validityTo: string;
   registrationFee: number;
   paymentStatus: PaymentStatus;
-  /** Only present when `status` is "rejected" — what to fix before resubmitting. */
-  rejectReason?: string;
-  /** On a resubmission, shows exactly which document(s) got flagged last time. */
+  /** Any entry here with `status: "rejected"` needs its one document replaced — see §4.4 Step 2. */
   documentReviews?: Record<ContractorDocumentField, DocumentReview>;
   institution: { name: string; logoUrl?: string };
-  /** Previously-entered fields, for resuming or resubmitting after rejection. */
+  /** Previously-entered fields, for resuming or replacing a rejected document. */
   existing?: Partial<Contractor>;
 }
 
