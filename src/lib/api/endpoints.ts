@@ -37,8 +37,9 @@ export const authApi = {
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post<void>("/auth/change-password", { currentPassword, newPassword }),
   forgotPassword: (email: string) => api.post<void>("/auth/forgot-password", { email }, { anonymous: true }),
-  resetPassword: (token: string, newPassword: string) =>
-    api.post<void>("/auth/reset-password", { token, newPassword }, { anonymous: true }),
+  /** `email` must match the address the code was requested for — the code is scoped to it. */
+  resetPassword: (email: string, token: string, newPassword: string) =>
+    api.post<void>("/auth/reset-password", { email, token, newPassword }, { anonymous: true }),
 };
 
 /* ----------------------------------------------------------------- users */

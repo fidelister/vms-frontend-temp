@@ -15,17 +15,19 @@ import { ApiError } from "@/lib/api/client";
  * the same confirmation regardless of what the API actually did.
  */
 export default function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const email = String(new FormData(e.currentTarget).get("email") ?? "").trim();
+    const entered = String(new FormData(e.currentTarget).get("email") ?? "").trim();
+    setEmail(entered);
     setError(null);
     setLoading(true);
     try {
-      await authApi.forgotPassword(email);
+      await authApi.forgotPassword(entered);
       setDone(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.messages.join(" ") : "Something went wrong. Please try again.");
@@ -43,7 +45,7 @@ export default function ForgotPasswordPage() {
             If an account exists for that email, we&rsquo;ve sent a reset code to it. The code expires in 30
             minutes.
           </p>
-          <Link href="/reset-password">
+          <Link href={`/reset-password?email=${encodeURIComponent(email)}`}>
             <Button fullWidth>Enter reset code</Button>
           </Link>
           <Link href="/login" className="text-center text-sm text-muted hover:text-ink hover:underline">
