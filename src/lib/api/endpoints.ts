@@ -5,6 +5,7 @@ import type {
   ContractorDocumentField,
   ContractorPaymentInitResponse,
   ContractorRegistrationView,
+  ContractorVerification,
   ContractorVisit,
   Dispatch,
   Institution,
@@ -349,6 +350,9 @@ export const contractorRegistrationApi = {
     files.forEach((file) => fd.append("file", file));
     return api.upload<void>(`/contractor-registration/${token}/documents/${field}`, fd, { anonymous: true });
   },
+  /** What the ID card's QR code resolves to — public, no auth. Always 200, never 404s. */
+  verify: (code: string) =>
+    api.get<ContractorVerification>(`/contractor-registration/verify/${code}`, { anonymous: true }),
 };
 
 /* -------------------------------------------------------------- dispatch */

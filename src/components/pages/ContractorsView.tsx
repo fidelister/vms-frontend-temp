@@ -83,7 +83,20 @@ export function ContractorListTab({ canManage }: { canManage: boolean }) {
       render: (c) => (
         <div className="flex items-center gap-3">
           {c.status === "active" && (
-            <button onClick={() => setViewingPermit(c)} className="text-sm text-primary hover:underline">
+            <button
+              onClick={() => {
+                setViewingPermit(c);
+                // The list response doesn't include verificationUrl (for the
+                // permit's QR code) — only the single-record GET does.
+                contractorsApi
+                  .get(c._id)
+                  .then((full) => setViewingPermit(full))
+                  .catch(() => {
+                    /* permit still shows fine without the QR code */
+                  });
+              }}
+              className="text-sm text-primary hover:underline"
+            >
               View permit
             </button>
           )}
@@ -106,7 +119,7 @@ export function ContractorListTab({ canManage }: { canManage: boolean }) {
         <div className="px-8 py-10">
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
             <PermitFront contractor={viewingPermit ?? undefined} />
-            <PermitBack />
+            <PermitBack verificationUrl={viewingPermit?.verificationUrl} />
           </div>
           <div className="mt-6 text-center">
             <button onClick={() => window.print()} className="text-sm font-semibold text-primary hover:underline">

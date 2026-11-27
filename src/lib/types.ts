@@ -234,6 +234,12 @@ export interface Contractor {
   companyName?: string;
   phone?: string;
   idNumber?: string;
+  /**
+   * Only present on `GET /contractors/:id` (not the list) — null until the
+   * contractor has cleared full document review. This is the URL the ID
+   * card's QR code should encode, see §4.4b.
+   */
+  verificationUrl?: string | null;
   photoUrl?: string;
   validityFrom: string;
   validityTo: string;
@@ -295,6 +301,26 @@ export interface ContractorPaymentInitResponse {
     email: string;
   };
 }
+
+/**
+ * `GET /contractor-registration/verify/:code` — public, no auth. Always 200;
+ * `verified: false` covers an unknown code and a known-but-currently-invalid
+ * one (revoked, outside its validity window) alike — there's no 404 case to
+ * special-case. See §4.4b.
+ */
+export type ContractorVerification =
+  | {
+      verified: true;
+      status?: string;
+      institutionName: string;
+      name: string;
+      companyName: string;
+      idNumber: string;
+      photoUrl?: string;
+      validityFrom: string;
+      validityTo: string;
+    }
+  | { verified: false; status?: string };
 
 export interface ContractorVisit {
   _id: string;

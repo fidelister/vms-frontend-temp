@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { QRCodeSVG } from "qrcode.react";
 import { cn } from "@/lib/utils";
 import { useInstitutionBrand } from "@/lib/institution/InstitutionBrandContext";
 import type { Contractor } from "@/lib/types";
@@ -74,7 +75,14 @@ export function PermitFront({ contractor, className }: { contractor?: Partial<Co
   );
 }
 
-export function PermitBack({ className }: { className?: string }) {
+export function PermitBack({
+  className,
+  verificationUrl,
+}: {
+  className?: string;
+  /** From `GET /contractors/:id` — null until the contractor clears full document review. See §4.4b. */
+  verificationUrl?: string | null;
+}) {
   const brand = useInstitutionBrand();
   const institutionName = brand?.name ?? "Institution";
 
@@ -93,6 +101,12 @@ export function PermitBack({ className }: { className?: string }) {
           This Personnel Identity Tag is the property of {institutionName}. If found, please return to{" "}
           {brand?.address || institutionName} or the nearest Military or Police Post.
         </p>
+        {verificationUrl && (
+          <div className="mt-5 flex flex-col items-center gap-1.5">
+            <QRCodeSVG value={verificationUrl} size={96} />
+            <p className="text-[11px] text-muted">Scan to verify</p>
+          </div>
+        )}
       </div>
     </div>
   );
